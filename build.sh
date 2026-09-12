@@ -20,6 +20,8 @@ swiftc -parse-as-library -O \
   -framework AppKit \
   -framework Carbon \
   -framework IOKit \
+  -framework ApplicationServices \
+  -framework CoreGraphics \
   -framework ServiceManagement \
   -target arm64-apple-macosx13.0
 

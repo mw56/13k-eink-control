@@ -110,6 +110,23 @@ final class ControlSocket {
               let type = obj["type"] as? String else {
             return json(["ok": false, "error": "bad request"])
         }
+        if type == "touch" {
+            let t = TouchBridge.shared
+            return json([
+                "ok": true,
+                "enabled": t.enabled,
+                "present": t.digitizerPresent,
+                "seized": t.seized,
+                "trusted": t.accessibilityTrusted,
+                "postEvent": t.postEventAccess,
+                "injecting": t.injecting,
+                "status": t.statusLine,
+                "hid": t.lastHID,
+                "mapped": t.lastMapped,
+                "screen": t.mappedScreenName,
+                "reports": t.hidReports,
+            ])
+        }
         if type == "query" {
             let info = DeviceController.shared.queryAll()
             return json(["ok": true, "results": [["info": info]]])

@@ -10,6 +10,7 @@ enum AppTermination {
         quitting = true
         DeviceController.shared.beginStop()
         ControlSocket.shared.stop()
+        TouchBridge.shared.stop()
         NSApp.windows.forEach { $0.close() }
         NSApp.terminate(nil)
         // SwiftUI MenuBarExtra + LSUIElement often swallows terminate.

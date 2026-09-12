@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TextEnhancement.apply()
         _ = ShortcutCenter.shared
         ControlSocket.shared.start()
+        TouchBridge.shared.start()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -16,12 +17,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         DeviceController.shared.beginStop()
         ControlSocket.shared.stop()
+        TouchBridge.shared.stop()
         return .terminateNow
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         DeviceController.shared.beginStop()
         ControlSocket.shared.stop()
+        TouchBridge.shared.stop()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

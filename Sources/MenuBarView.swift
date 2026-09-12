@@ -3,10 +3,12 @@ import SwiftUI
 struct MenuBarView: View {
     @ObservedObject var device = DeviceController.shared
     @ObservedObject var shortcuts = ShortcutCenter.shared
+    @ObservedObject var touch = TouchBridge.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+            touchStatus
             modeRow
             contrastBlock
             frontLightBlock
@@ -48,6 +50,28 @@ struct MenuBarView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var touchStatus: some View {
+        Button {
+            SettingsWindow.show()
+            if touch.enabled && !touch.accessibilityTrusted {
+                touch.openAccessibilitySettings()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(touch.accessibilityTrusted && touch.injecting ? Color.green : (touch.injecting ? Color.orange : Color.secondary.opacity(0.4)))
+                    .frame(width: 7, height: 7)
+                Text(touch.hidReports > 0
+                     ? "\(touch.statusLine)  ·  \(touch.hidReports)"
+                     : touch.statusLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var modeRow: some View {
@@ -209,6 +233,7 @@ struct MenuBarView: View {
                 Button(L10n.t("Restart", "重新啟動")) {
                     AppTermination.relaunch()
                 }
+                .fontWeight(touch.enabled && !touch.accessibilityTrusted ? .semibold : .regular)
                 Spacer()
                 Button(L10n.t("Quit", "結束")) {
                     AppTermination.quit()
