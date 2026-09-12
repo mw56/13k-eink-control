@@ -36,15 +36,15 @@ It grew out of using [plateaukao/paperlike13k_macos](https://github.com/plateauk
 
 ## Install
 
-1. Build on Apple silicon (macOS 13+):
+**Prebuilt:** download `PaperlikeControl.app.zip` from [Releases](https://github.com/mw56/13k-eink-control/releases), unzip, move the app to `/Applications`. First launch: right-click → Open (ad-hoc signed, not notarized).
+
+**From source** (Apple silicon, macOS 13+):
 
 ```bash
 ./build.sh
 ```
 
-2. Copy `build/PaperlikeControl.app` to `/Applications`.
-3. Right-click → Open the first time (ad-hoc signed, not notarized).
-4. Look for the display icon in the menu bar. The window title is **13K Control**.
+Copy `build/PaperlikeControl.app` to `/Applications`. Look for the display icon in the menu bar. The window title is **13K Control**.
 
 Do not run the vendor `PaperLikeClient` or `paperlike --daemon` at the same time. The serial port is exclusive.
 
@@ -88,6 +88,8 @@ Upstream community tools that documented the serial protocol did not ship a lice
 ## 中文
 
 **非官方 · 與大上科技無關。** 這是獨立的業餘專案，不是大上產品，也沒有獲得大上授權或背書。名稱裡的 Paperlike / DASUNG 只用來說明「這是寫給哪一台螢幕用的控制器」。
+
+編譯好的 App 在 [Releases](https://github.com/mw56/13k-eink-control/releases) 下載 `PaperlikeControl.app.zip`，解壓後拖進「應用程式」。第一次請右鍵「打開」。
 
 畫面走 HDMI／USB-C；**刷新、模式、前光**走 CH340 串口。官方 Mac 客戶端常在串口還沒好時就放棄。這個 App 用 VID:PID 找埠、定期 `0x20 0x01`、斷線會重連。
 
