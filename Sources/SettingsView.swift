@@ -11,12 +11,25 @@ struct SettingsView: View {
     @State private var recording: String?
 
     var body: some View {
-        TabView {
-            generalTab.tabItem { Text(L10n.t("General", "一般")) }
-            shortcutTab.tabItem { Text(L10n.t("Shortcuts", "快捷鍵")) }
-            macTab.tabItem { Text(L10n.t("macOS", "macOS")) }
+        VStack(spacing: 0) {
+            TabView {
+                generalTab.tabItem { Text(L10n.t("General", "一般")) }
+                shortcutTab.tabItem { Text(L10n.t("Shortcuts", "快捷鍵")) }
+                macTab.tabItem { Text(L10n.t("macOS", "macOS")) }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            Divider()
+            HStack {
+                Spacer()
+                Button(L10n.t("Close", "關閉")) {
+                    SettingsWindow.close()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            .padding(12)
         }
-        .padding(20)
+        .frame(minWidth: 460, minHeight: 500)
         .background(KeyCatcher(recording: $recording, onCapture: capture))
     }
 

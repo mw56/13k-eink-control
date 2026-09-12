@@ -25,14 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        NSApp.activate(ignoringOtherApps: true)
-        NotificationCenter.default.post(name: .openControlPanel, object: nil)
-        for window in NSApp.windows where window.canBecomeKey {
-            if window.title.contains("13K") {
-                window.makeKeyAndOrderFront(nil)
-                return true
-            }
-        }
+        SettingsWindow.show()
         return true
     }
 }
@@ -54,10 +47,6 @@ struct PaperlikeControlApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("13K Control", id: "panel") {
-            MenuBarView()
-                .frame(minWidth: 380, idealWidth: 400)
-        }
         .commands {
             CommandGroup(replacing: .appTermination) {
                 Button(L10n.t("Quit 13K Control", "結束 13K Control")) {

@@ -3,7 +3,6 @@ import SwiftUI
 struct MenuBarView: View {
     @ObservedObject var device = DeviceController.shared
     @ObservedObject var shortcuts = ShortcutCenter.shared
-    @State private var showSettings = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -19,12 +18,8 @@ struct MenuBarView: View {
         }
         .padding(16)
         .frame(width: 380)
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .frame(width: 460, height: 520)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .openControlPanel)) { _ in
-            showSettings = true
+            SettingsWindow.show()
         }
     }
 
@@ -208,7 +203,7 @@ struct MenuBarView: View {
                     device.reconnectNow()
                 }
                 Spacer()
-                Button(L10n.t("Settings…", "設定…")) { showSettings = true }
+                Button(L10n.t("Settings…", "設定…")) { SettingsWindow.show() }
             }
             HStack {
                 Button(L10n.t("Restart", "重新啟動")) {
