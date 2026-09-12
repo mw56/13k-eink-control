@@ -1,8 +1,7 @@
 import Foundation
 import IOKit
 
-/// macOS GPU dithering off — same IOMobileFramebuffer properties used by
-/// DASUNG's Stillcolor helper in PaperLikeClient V2.0.3.
+/// macOS GPU dithering off via public IOMobileFramebuffer properties.
 enum Stillcolor {
     static var isEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: "gpuDitheringOff") }

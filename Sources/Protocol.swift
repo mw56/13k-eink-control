@@ -1,6 +1,6 @@
 import Foundation
 
-/// DASUNG Paperlike 13K serial protocol (same on Windows V2.0 and Mac V2.0.3).
+/// Serial protocol used by the 13K panel (same framing as the vendor V2.0 clients).
 /// 24 uppercase ASCII hex chars: 5FF5 + cmd + opt + 12-digit payload + A0FA
 enum PaperlikeCmd: UInt8 {
     case contrast = 0x01

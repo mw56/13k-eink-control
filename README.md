@@ -1,19 +1,19 @@
-# Paperlike Control
+# 13K Control
 
-Unofficial macOS menu-bar controller for the **DASUNG Paperlike 13K** (3200×2400 @ 37 Hz color e-ink).
+**Unofficial · not DASUNG.** Independent hobby software. Not affiliated with, endorsed by, or supported by DASUNG / 大上科技.
 
-Not affiliated with DASUNG. The official Mac V2.0.3 client talks to the same USB-serial MCU; this app reimplements that control path natively, with reconnect, keepalive, and shortcuts that do not need Accessibility permission.
+A macOS menu-bar **controller for** the [Paperlike 13K](https://shop.dasung.com/) e-ink monitor (3200×2400 @ 37 Hz). “Paperlike” and “DASUNG” are their marks; this project only uses those names to say which hardware it talks to.
 
 [中文说明](#中文)
 
 ## Why this exists
 
-DASUNG's Mac client often shows "disconnected" even when the panel is already an extra display. The 13K is controlled over a CH340 serial port (`1a86:7523`), not over HDMI. This app:
+The vendor’s Mac client often shows “disconnected” even when the panel is already an extra display. The 13K is controlled over a CH340 serial port (`1a86:7523`), not over HDMI. This app:
 
 - Matches the CH340 by USB VID/PID (not a guessed `cu.usbserial*` name)
 - Sends the `0x20 0x01` keepalive the panel needs
 - Re-opens the port if USB drops (including through a Thunderbolt dock)
-- Covers the Windows/Mac V2.0 feature set that actually talks to the MCU
+- Covers the serial commands the Windows/Mac V2.0 clients send to the MCU
 
 It grew out of using [plateaukao/paperlike13k_macos](https://github.com/plateaukao/paperlike13k_macos) v0.2 and the Linux init script it was forked from. This is a **new repo**, not a GitHub fork, because the UI and connection layer were rewritten. See [NOTICE](NOTICE).
 
@@ -44,9 +44,9 @@ It grew out of using [plateaukao/paperlike13k_macos](https://github.com/plateauk
 
 2. Copy `build/PaperlikeControl.app` to `/Applications`.
 3. Right-click → Open the first time (ad-hoc signed, not notarized).
-4. Look for the display icon in the menu bar.
+4. Look for the display icon in the menu bar. The window title is **13K Control**.
 
-Do not run DASUNG `PaperLikeClient` or `paperlike --daemon` at the same time. The serial port is exclusive.
+Do not run the vendor `PaperLikeClient` or `paperlike --daemon` at the same time. The serial port is exclusive.
 
 ### CLI
 
@@ -61,7 +61,7 @@ are forwarded instead of stealing the port.
 
 ## Hardware
 
-- Paperlike 13K (2025), MCU protocol `0x31`
+- 13K panel (2025), MCU protocol `0x31`
 - USB-C or Mini-HDMI for video **and** a USB data path for control
 - CH340 serial: `1a86:7523`, 115200 8N1, DTR/RTS off
 - Packet: `5FF5` + cmd + opt + 12 hex zeros + `A0FA` (uppercase)
@@ -83,11 +83,11 @@ Native panel mode is 3200×2400 @ 37 Hz. Some docks fall back to 2048×1536.
 
 [MIT](LICENSE) for the Swift sources in this repository.
 
-Upstream community tools that documented the serial protocol did not ship a license. This tree does not copy their files. DASUNG names and the Paperlike product are their trademarks.
+Upstream community tools that documented the serial protocol did not ship a license. This tree does not copy their files. DASUNG, Paperlike, and related names are their trademarks and are used here only to identify compatible hardware.
 
 ## 中文
 
-非官方的 Paperlike 13K macOS 選單列控制器。不是大上科技的產品，也不需要官方 V2.0.3 客戶端。
+**非官方 · 與大上科技無關。** 這是獨立的業餘專案，不是大上產品，也沒有獲得大上授權或背書。名稱裡的 Paperlike / DASUNG 只用來說明「這是寫給哪一台螢幕用的控制器」。
 
 畫面走 HDMI／USB-C；**刷新、模式、前光**走 CH340 串口。官方 Mac 客戶端常在串口還沒好時就放棄。這個 App 用 VID:PID 找埠、定期 `0x20 0x01`、斷線會重連。
 

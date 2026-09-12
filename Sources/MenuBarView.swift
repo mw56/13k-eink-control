@@ -31,8 +31,11 @@ struct MenuBarView: View {
                 .fill(device.isConnected ? Color.green : Color.red)
                 .frame(width: 9, height: 9)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Paperlike 13K")
+                Text("13K Control")
                     .font(.headline)
+                Text(L10n.t("Unofficial · not DASUNG", "非官方 · 與大上無關"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 Text(device.isConnected
                      ? (device.portPath as NSString).lastPathComponent
                      : (device.lastError.isEmpty ? L10n.t("Disconnected", "未連線") : device.lastError))

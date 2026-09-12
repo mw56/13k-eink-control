@@ -22,6 +22,11 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         Form {
+            Section {
+                Text(L10n.t("Unofficial · not DASUNG. Controller for the 13K panel only.", "非官方 · 與大上無關。僅作為 13K 的控制器。"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section(L10n.t("Startup", "啟動")) {
                 Toggle(L10n.t("Open at login", "開機自動啟動"), isOn: Binding(
                     get: { loginEnabled },

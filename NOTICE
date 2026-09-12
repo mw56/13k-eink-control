@@ -1,7 +1,9 @@
-Paperlike Control is an independent, unofficial macOS client for DASUNG
+13K Control is an independent, unofficial macOS controller for DASUNG
 Paperlike 13K monitors.
 
 It is not affiliated with, endorsed by, or supported by DASUNG / 大上科技.
+“DASUNG”, “Paperlike”, and “13K” are used only to identify the hardware
+this software can talk to.
 
 Protocol notes
 --------------
@@ -22,4 +24,4 @@ as plateaukao's Python CLI so existing `paperlike --refresh` wrappers keep
 working. That compatibility is reimplemented here, not vendored.
 
 Stillcolor-style GPU dithering uses public IOMobileFramebuffer properties
-also used by DASUNG's Mac client (`enableDither`, `uniformity2D`).
+(`enableDither`, `uniformity2D`).

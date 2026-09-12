@@ -13,13 +13,13 @@
     <key>CFBundleName</key>
     <string>PaperlikeControl</string>
     <key>CFBundleDisplayName</key>
-    <string>Paperlike 13K</string>
+    <string>13K Control</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -27,6 +27,6 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Independent Paperlike 13K controller. Not affiliated with DASUNG.</string>
+    <string>Unofficial controller for the Paperlike 13K. Not affiliated with DASUNG.</string>
 </dict>
 </plist>
