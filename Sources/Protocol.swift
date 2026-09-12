@@ -83,7 +83,7 @@ enum DisplayMode: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// Hardware quirk (also in official / paperlike-rs): querying mode 1 can return 5.
+    /// Hardware quirk: querying mode 1 can return 5.
     static func fromDevice(_ raw: Int) -> DisplayMode? {
         if raw == 5 { return .web }
         return DisplayMode(rawValue: raw)

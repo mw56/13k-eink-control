@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-/// Compatible with plateaukao/paperlike13k_macos Python CLI (`paperlike.sock`).
+/// Local JSON control socket (`$TMPDIR/paperlike.sock`).
 final class ControlSocket {
     static let shared = ControlSocket()
     private var listenFD: Int32 = -1
