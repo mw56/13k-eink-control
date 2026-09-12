@@ -15,8 +15,6 @@ The vendor’s Mac client often shows “disconnected” even when the panel is 
 - Re-opens the port if USB drops (including through a Thunderbolt dock)
 - Covers the serial commands the Windows/Mac V2.0 clients send to the MCU
 
-It grew out of using [plateaukao/paperlike13k_macos](https://github.com/plateaukao/paperlike13k_macos) v0.2 and the Linux init script it was forked from. This is a **new repo**, not a GitHub fork, because the UI and connection layer were rewritten. See [NOTICE](NOTICE).
-
 ## Features
 
 | Control | Notes |
