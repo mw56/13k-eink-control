@@ -23,6 +23,9 @@ struct MenuBarView: View {
             SettingsView()
                 .frame(width: 460, height: 520)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openControlPanel)) { _ in
+            showSettings = true
+        }
     }
 
     private var header: some View {
@@ -195,19 +198,27 @@ struct MenuBarView: View {
     }
 
     private var footer: some View {
-        HStack {
-            Button(L10n.t("Ghost Cleanup", "立即清屏")) {
-                device.refresh()
+        VStack(spacing: 8) {
+            HStack {
+                Button(L10n.t("Ghost Cleanup", "立即清屏")) {
+                    device.refresh()
+                }
+                .keyboardShortcut("r", modifiers: [.control, .option])
+                Button(L10n.t("Reconnect", "重新連線")) {
+                    device.reconnectNow()
+                }
+                Spacer()
+                Button(L10n.t("Settings…", "設定…")) { showSettings = true }
             }
-            .keyboardShortcut("r", modifiers: [.control, .option])
-            Button(L10n.t("Reconnect", "重新連線")) {
-                device.reconnectNow()
-            }
-            Spacer()
-            Button(L10n.t("Settings…", "設定…")) { showSettings = true }
-            Button(L10n.t("Quit", "結束")) {
-                device.shutdown()
-                NSApp.terminate(nil)
+            HStack {
+                Button(L10n.t("Restart", "重新啟動")) {
+                    AppTermination.relaunch()
+                }
+                Spacer()
+                Button(L10n.t("Quit", "結束")) {
+                    AppTermination.quit()
+                }
+                .keyboardShortcut("q")
             }
         }
     }

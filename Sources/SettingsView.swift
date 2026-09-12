@@ -82,6 +82,14 @@ struct SettingsView: View {
                 }
                 Button(L10n.t("Reconnect now", "立即重連")) { device.reconnectNow() }
             }
+            Section {
+                Button(L10n.t("Restart 13K Control", "重新啟動 13K Control")) {
+                    AppTermination.relaunch()
+                }
+                Button(L10n.t("Quit 13K Control", "結束 13K Control"), role: .destructive) {
+                    AppTermination.quit()
+                }
+            }
         }
         .formStyle(.grouped)
     }

@@ -22,6 +22,7 @@ final class DeviceController: ObservableObject {
     private var autoClear: DispatchSourceTimer?
     private var reconnect: DispatchSourceTimer?
     private let lock = NSLock()
+    private var stopping = false
 
     private init() {
         autoClearEnabled = UserDefaults.standard.object(forKey: "autoClearEnabled") as? Bool ?? true
@@ -91,23 +92,35 @@ final class DeviceController: ObservableObject {
     }
 
     func reconnectNow() {
+        guard !stopping else { return }
         queue.async { [weak self] in self?.connectAndInit() }
     }
 
-    func shutdown() {
+    /// Non-blocking stop so Quit is not stuck on serial I/O.
+    func beginStop() {
+        stopping = true
         keepAlive?.cancel()
         autoClear?.cancel()
         reconnect?.cancel()
-        queue.sync {
-            _ = sendLocked(cmd: PaperlikeCmd.activate.rawValue, opt: PaperlikeOpt.activateOff, waitMs: 100)
-            port?.closePort()
-            port = nil
+        keepAlive = nil
+        autoClear = nil
+        reconnect = nil
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.port?.closePort()
+            self.port = nil
         }
     }
 
+    func shutdown() {
+        beginStop()
+    }
+
     private func connectAndInit() {
+        guard !stopping else { return }
         lock.lock()
         defer { lock.unlock() }
+        if stopping { return }
         port?.closePort()
         port = nil
         guard let path = SerialPort.findCH340Callout() else {
@@ -194,7 +207,7 @@ final class DeviceController: ObservableObject {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 10, repeating: 10)
         timer.setEventHandler { [weak self] in
-            guard let self else { return }
+            guard let self, !self.stopping else { return }
             if let port = self.port, port.isOpen {
                 _ = self.sendLocked(cmd: PaperlikeCmd.activate.rawValue, opt: PaperlikeOpt.activateOn, waitMs: 80)
             }
@@ -207,7 +220,7 @@ final class DeviceController: ObservableObject {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 3, repeating: 3)
         timer.setEventHandler { [weak self] in
-            guard let self else { return }
+            guard let self, !self.stopping else { return }
             let path = SerialPort.findCH340Callout()
             let open = self.port?.isOpen == true
             if path == nil && open {
@@ -230,7 +243,8 @@ final class DeviceController: ObservableObject {
         let secs = max(30, autoClearSeconds)
         timer.schedule(deadline: .now() + .seconds(secs), repeating: .seconds(secs))
         timer.setEventHandler { [weak self] in
-            _ = self?.sendLocked(cmd: PaperlikeCmd.refresh.rawValue, opt: 0x01, waitMs: 80)
+            guard let self, !self.stopping else { return }
+            _ = self.sendLocked(cmd: PaperlikeCmd.refresh.rawValue, opt: 0x01, waitMs: 80)
         }
         timer.resume()
         autoClear = timer

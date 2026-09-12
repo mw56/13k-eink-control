@@ -24,6 +24,7 @@ final class ControlSocket {
     func stop() {
         running = false
         if listenFD != -1 {
+            Darwin.shutdown(listenFD, SHUT_RDWR)
             close(listenFD)
             listenFD = -1
         }
