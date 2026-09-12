@@ -1,0 +1,25 @@
+Paperlike Control is an independent, unofficial macOS client for DASUNG
+Paperlike 13K monitors.
+
+It is not affiliated with, endorsed by, or supported by DASUNG / 大上科技.
+
+Protocol notes
+--------------
+The USB-serial framing used here (24-character uppercase ASCII hex packets
+starting with 5FF5 and ending with A0FA, CH340 1a86:7523 at 115200 8N1) was
+documented by community reverse engineering, including:
+
+- https://github.com/roflecopter/paperlike13k_linux
+- https://github.com/plateaukao/paperlike13k_macos
+- https://github.com/codefastdieyoung/paperlike-rs
+
+Those projects did not publish a license at the time this repository was
+created. This tree does not copy their source files. Command IDs and packet
+layout are interoperability facts about the hardware.
+
+The Unix socket at $TMPDIR/paperlike.sock accepts the same JSON request shape
+as plateaukao's Python CLI so existing `paperlike --refresh` wrappers keep
+working. That compatibility is reimplemented here, not vendored.
+
+Stillcolor-style GPU dithering uses public IOMobileFramebuffer properties
+also used by DASUNG's Mac client (`enableDither`, `uniformity2D`).

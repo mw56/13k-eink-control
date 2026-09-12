@@ -1,0 +1,9 @@
+.DS_Store
+build/
+*.app
+xcuserdata/
+DerivedData/
+.idea/
+.vscode/
+*.swp
+.env
