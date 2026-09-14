@@ -29,15 +29,16 @@ final class TouchSources {
     private var remapped = 0
     private var fingerDown = false
     private var pollDevice: IOHIDDevice?
-    private var xEl: IOHIDElement?
-    private var yEl: IOHIDElement?
-    private var tipEl: IOHIDElement?
+    private var xEls: [IOHIDElement] = []
+    private var yEls: [IOHIDElement] = []
+    private var tipEls: [IOHIDElement] = []
     private var countEl: IOHIDElement?
     private var pollX = 0
     private var pollY = 0
     private var pollTip = 0
     private var pollCount = 0
     private var pollOK = false
+    private var lastFingerN = 0
     private let lock = NSLock()
 
     func start() {
@@ -101,12 +102,12 @@ final class TouchSources {
         for el in elements {
             let page = IOHIDElementGetUsagePage(el)
             let usage = IOHIDElementGetUsage(el)
-            if page == 1, usage == 0x30, xEl == nil { xEl = el }
-            if page == 1, usage == 0x31, yEl == nil { yEl = el }
-            if page == 0x0D, usage == 0x42, tipEl == nil { tipEl = el }
+            if page == 1, usage == 0x30 { xEls.append(el) }
+            if page == 1, usage == 0x31 { yEls.append(el) }
+            if page == 0x0D, usage == 0x42 { tipEls.append(el) }
             if page == 0x0D, usage == 0x54, countEl == nil { countEl = el }
         }
-        log("poll elements x=\(xEl != nil) y=\(yEl != nil) tip=\(tipEl != nil) cnt=\(countEl != nil)")
+        log("poll fingers tips=\(tipEls.count) x=\(xEls.count) y=\(yEls.count)")
     }
 
     private func readElement(_ el: IOHIDElement?) -> Int {
@@ -120,24 +121,31 @@ final class TouchSources {
     }
 
     private func pollHID() {
-        let x = readElement(xEl)
-        let y = readElement(yEl)
-        let tip = readElement(tipEl)
-        let count = readElement(countEl)
-        pollX = x
-        pollY = y
-        pollTip = tip
-        pollCount = count
-        // Contact-count element is not reliable at idle (reads 2 with no finger).
-        // Only the tip switch means a real touch.
-        let down = tip != 0
-        let changed = down != fingerDown
+        let n = min(tipEls.count, min(xEls.count, yEls.count))
+        var fingers: [TouchFinger] = []
+        fingers.reserveCapacity(n)
+        for i in 0..<n {
+            let tip = readElement(tipEls[i])
+            guard tip != 0 else { continue }
+            let x = readElement(xEls[i])
+            let y = readElement(yEls[i])
+            let (nx, ny) = normalize(Double(x), Double(y))
+            fingers.append(TouchFinger(nx: nx, ny: ny, id: i))
+        }
+        pollTip = fingers.isEmpty ? 0 : 1
+        pollCount = fingers.count
+        if let first = fingers.first {
+            pollX = Int((first.nx * 4096).rounded())
+            pollY = Int((first.ny * 4096).rounded())
+        }
+        let down = !fingers.isEmpty
+        let changed = down != fingerDown || fingers.count != lastFingerN
         fingerDown = down
+        lastFingerN = fingers.count
         guard down || changed else { return }
-        let (nx, ny) = normalize(Double(x), Double(y))
         onSample?(TouchSample(
-            nx: nx, ny: ny, down: down,
-            summary: "poll tip=\(tip) cnt=\(count) x=\(x) y=\(y)"
+            fingers: fingers,
+            summary: "fingers=\(fingers.count) x=\(pollX) y=\(pollY)"
         ))
     }
 
@@ -252,7 +260,7 @@ final class TouchSources {
         let (nx, ny) = normalize(x, y)
         let down = touch || nx > 0 || ny > 0
         onSample?(TouchSample(
-            nx: nx, ny: ny, down: down,
+            fingers: down ? [TouchFinger(nx: nx, ny: ny, id: 0)] : [],
             summary: String(format: "%@ t=%u x=%.3f y=%.3f down=%d", tag, type, x, y, down ? 1 : 0)
         ))
     }

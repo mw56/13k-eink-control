@@ -34,6 +34,7 @@ final class TouchEngine: ObservableObject {
     @Published var statusLine = ""
     @Published var hidReports = 0
     @Published var probeText = ""
+    @Published var bindings = TouchBindings.shared
 
     var injecting: Bool { enabled && digitizerPresent }
     var mappedScreenName: String { screenName }
@@ -52,6 +53,23 @@ final class TouchEngine: ObservableObject {
     private var lastClickAt: TimeInterval = 0
     private var lastClickPoint = CGPoint.zero
     private var liftWork: DispatchWorkItem?
+    private var dragActive = false
+    private lazy var gestures: TouchGestures = {
+        let g = TouchGestures()
+        g.onOverlay = { [weak self] pts in
+            guard let self, self.overlayEnabled else { return }
+            DispatchQueue.main.async {
+                self.overlay.show(points: pts, cocoaFrame: self.frame, quartzBounds: self.bounds)
+            }
+        }
+        g.onHide = { [weak self] in
+            DispatchQueue.main.async { self?.overlay.hide() }
+        }
+        g.onGesture = { [weak self] kind, phase, payload in
+            self?.apply(kind, phase, payload)
+        }
+        return g
+    }()
 
     private init() {
         let d = UserDefaults.standard
@@ -78,7 +96,7 @@ final class TouchEngine: ObservableObject {
             DispatchQueue.main.async { self?.note(line) }
         }
         sources.onSample = { [weak self] sample in
-            self?.handle(sample)
+            DispatchQueue.main.async { self?.handle(sample) }
         }
         sources.remapPoint = { loc in
             TouchEngine.shared.remapTo13K(loc)
@@ -99,7 +117,8 @@ final class TouchEngine: ObservableObject {
         sources.stop()
         overlay.hide()
         probe.hide()
-        if mouseDown { post(.leftMouseUp, at: lastPoint) }
+        gestures.reset()
+        dragActive = false
         mouseDown = false
     }
 
@@ -189,59 +208,134 @@ final class TouchEngine: ObservableObject {
     // MARK: - samples → 13K
 
     private func handle(_ sample: TouchSample) {
-        DispatchQueue.main.async {
-            self.hidReports += 1
-            self.lastHID = sample.summary
-            self.refreshTrust()
-        }
+        hidReports += 1
+        lastHID = sample.summary
         guard enabled, !bounds.isEmpty else { return }
-        var nx = sample.nx
-        var ny = sample.ny
-        if swapXY { swap(&nx, &ny) }
-        if invertX { nx = 1 - nx }
-        if invertY { ny = 1 - ny }
-        nx = min(1, max(0, nx))
-        ny = min(1, max(0, ny))
-        let pt = CGPoint(x: bounds.minX + nx * bounds.width, y: bounds.minY + ny * bounds.height)
-        lastPoint = pt
-        DispatchQueue.main.async {
-            self.lastMapped = String(format: "%.0f, %.0f", pt.x, pt.y)
-            if self.overlayEnabled { self.overlay.show(quartz: pt, cocoaFrame: self.frame, quartzBounds: self.bounds) }
+        let points = sample.fingers.map { finger -> CGPoint in
+            var nx = finger.nx
+            var ny = finger.ny
+            if swapXY { swap(&nx, &ny) }
+            if invertX { nx = 1 - nx }
+            if invertY { ny = 1 - ny }
+            nx = min(1, max(0, nx))
+            ny = min(1, max(0, ny))
+            return CGPoint(x: bounds.minX + nx * bounds.width, y: bounds.minY + ny * bounds.height)
         }
-
-        if sample.alreadyDelivered {
-            return
+        if let p = points.first {
+            lastPoint = p
+            lastMapped = String(format: "%.0f, %.0f ×%d", p.x, p.y, points.count)
         }
-        liftWork?.cancel()
-        if sample.down {
-            if !mouseDown {
-                let now = ProcessInfo.processInfo.systemUptime
-                if now - lastClickAt < NSEvent.doubleClickInterval, hypot(pt.x - lastClickPoint.x, pt.y - lastClickPoint.y) < 12 {
-                    clickCount += 1
-                } else { clickCount = 1 }
-                lastClickAt = now
-                lastClickPoint = pt
-                mouseDown = true
-                post(.leftMouseDown, at: pt)
-            } else {
-                post(.leftMouseDragged, at: pt)
-            }
-        }
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.mouseDown else { return }
-            self.post(.leftMouseUp, at: self.lastPoint)
-            self.mouseDown = false
-            DispatchQueue.main.async { self.overlay.hide() }
-        }
-        liftWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+        gestures.ingest(fingers: points, now: ProcessInfo.processInfo.systemUptime)
     }
 
-    private func post(_ type: CGEventType, at point: CGPoint) {
+    private func apply(_ kind: TouchGestureKind, _ phase: GesturePhase, _ p: GesturePayload) {
+        let action = bindings.action(for: kind)
+        guard action != .none else { return }
+        switch action {
+        case .none:
+            return
+        case .leftClick:
+            guard phase == .ended else { return }
+            click(at: p.point, right: false)
+        case .rightClick:
+            guard phase == .ended else { return }
+            click(at: p.point, right: true)
+        case .scroll:
+            if phase == .changed {
+                postScroll(dx: p.delta.x, dy: p.delta.y)
+            }
+        case .drag:
+            switch phase {
+            case .began:
+                dragActive = true
+                post(.leftMouseDown, at: p.point, clickCount: 1)
+            case .changed:
+                if dragActive { post(.leftMouseDragged, at: p.point, clickCount: 1) }
+            case .ended:
+                if dragActive {
+                    post(.leftMouseUp, at: p.point, clickCount: 1)
+                    dragActive = false
+                }
+            }
+        case .zoom:
+            if phase == .began || phase == .changed {
+                postZoom(p.scaleDelta)
+            }
+        case .missionControl:
+            guard phase == .ended else { return }
+            MacDesktopActions.missionControl()
+        case .appExpose:
+            guard phase == .ended else { return }
+            MacDesktopActions.appExpose()
+        case .launchpad:
+            guard phase == .ended else { return }
+            MacDesktopActions.launchpad()
+        case .showDesktop:
+            guard phase == .ended else { return }
+            MacDesktopActions.showDesktop()
+        }
+    }
+
+    private func click(at point: CGPoint, right: Bool) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if !right, now - lastClickAt < NSEvent.doubleClickInterval, hypot(point.x - lastClickPoint.x, point.y - lastClickPoint.y) < 18 {
+            clickCount += 1
+        } else {
+            clickCount = 1
+        }
+        lastClickAt = now
+        lastClickPoint = point
+        if right {
+            post(.rightMouseDown, at: point, clickCount: 1)
+            post(.rightMouseUp, at: point, clickCount: 1)
+        } else {
+            post(.leftMouseDown, at: point, clickCount: clickCount)
+            post(.leftMouseUp, at: point, clickCount: clickCount)
+        }
+    }
+
+    private func post(_ type: CGEventType, at point: CGPoint, clickCount: Int64) {
         CGWarpMouseCursorPosition(point)
         let button: CGMouseButton = (type == .rightMouseDown || type == .rightMouseUp) ? .right : .left
         guard let ev = CGEvent(mouseEventSource: eventSource, mouseType: type, mouseCursorPosition: point, mouseButton: button) else { return }
         ev.setIntegerValueField(.mouseEventClickState, value: clickCount)
+        ev.post(tap: .cghidEventTap)
+        ev.post(tap: .cgSessionEventTap)
+    }
+
+    private func postScroll(dx: CGFloat, dy: CGFloat) {
+        // 180° from v1.3.0 so the page moves with the finger like iPad.
+        let wheelY = Int32((dy * 1.4).rounded())
+        let wheelX = Int32((dx * 1.4).rounded())
+        guard wheelX != 0 || wheelY != 0 else { return }
+        guard let ev = CGEvent(
+            scrollWheelEvent2Source: eventSource,
+            units: .pixel,
+            wheelCount: 2,
+            wheel1: wheelY,
+            wheel2: wheelX,
+            wheel3: 0
+        ) else { return }
+        ev.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        ev.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: Double(dy))
+        ev.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: Double(dx))
+        ev.post(tap: .cghidEventTap)
+        ev.post(tap: .cgSessionEventTap)
+    }
+
+    private func postZoom(_ delta: CGFloat) {
+        guard abs(delta) > 0.2 else { return }
+        // Command+scroll is the usual macOS pinch-zoom in Safari, Maps, Preview.
+        guard let ev = CGEvent(
+            scrollWheelEvent2Source: eventSource,
+            units: .pixel,
+            wheelCount: 1,
+            wheel1: Int32(delta.rounded()),
+            wheel2: 0,
+            wheel3: 0
+        ) else { return }
+        ev.flags = .maskCommand
+        ev.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         ev.post(tap: .cghidEventTap)
         ev.post(tap: .cgSessionEventTap)
     }
@@ -300,45 +394,57 @@ final class TouchEngine: ObservableObject {
 
 typealias TouchBridge = TouchEngine
 
-struct TouchSample {
+struct TouchFinger {
     var nx: CGFloat
     var ny: CGFloat
-    var down: Bool
+    var id: Int
+}
+
+struct TouchSample {
+    var fingers: [TouchFinger]
     var summary: String
-    var alreadyDelivered = false
 }
 
 // MARK: - Cursor on the 13K
 
 private final class TouchCursor {
-    private var window: NSWindow?
+    private var windows: [NSWindow] = []
 
-    func show(quartz: CGPoint, cocoaFrame: CGRect, quartzBounds: CGRect) {
-        let nx = quartzBounds.width == 0 ? 0 : (quartz.x - quartzBounds.minX) / quartzBounds.width
-        let ny = quartzBounds.height == 0 ? 0 : (quartz.y - quartzBounds.minY) / quartzBounds.height
-        let cocoa = CGPoint(x: cocoaFrame.minX + nx * cocoaFrame.width, y: cocoaFrame.maxY - ny * cocoaFrame.height)
-        if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 36, height: 36), styleMask: .borderless, backing: .buffered, defer: false)
-            w.isOpaque = false
-            w.backgroundColor = .clear
-            w.hasShadow = false
-            w.level = .statusBar
-            w.ignoresMouseEvents = true
-            w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-            let v = NSView(frame: NSRect(x: 0, y: 0, width: 36, height: 36))
-            v.wantsLayer = true
-            v.layer?.cornerRadius = 18
-            v.layer?.borderWidth = 2
-            v.layer?.borderColor = NSColor.systemOrange.cgColor
-            v.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.25).cgColor
-            w.contentView = v
-            window = w
+    func show(points: [CGPoint], cocoaFrame: CGRect, quartzBounds: CGRect) {
+        while windows.count < points.count { windows.append(makeDot()) }
+        while windows.count > points.count {
+            windows.removeLast().orderOut(nil)
         }
-        window?.setFrameOrigin(NSPoint(x: cocoa.x - 18, y: cocoa.y - 18))
-        window?.orderFrontRegardless()
+        for (i, quartz) in points.enumerated() {
+            let nx = quartzBounds.width == 0 ? 0 : (quartz.x - quartzBounds.minX) / quartzBounds.width
+            let ny = quartzBounds.height == 0 ? 0 : (quartz.y - quartzBounds.minY) / quartzBounds.height
+            let cocoa = CGPoint(x: cocoaFrame.minX + nx * cocoaFrame.width, y: cocoaFrame.maxY - ny * cocoaFrame.height)
+            windows[i].setFrameOrigin(NSPoint(x: cocoa.x - 16, y: cocoa.y - 16))
+            windows[i].orderFrontRegardless()
+        }
     }
 
-    func hide() { window?.orderOut(nil) }
+    func hide() {
+        windows.forEach { $0.orderOut(nil) }
+    }
+
+    private func makeDot() -> NSWindow {
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 32, height: 32), styleMask: .borderless, backing: .buffered, defer: false)
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.hasShadow = false
+        w.level = .statusBar
+        w.ignoresMouseEvents = true
+        w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        let v = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
+        v.wantsLayer = true
+        v.layer?.cornerRadius = 16
+        v.layer?.borderWidth = 2
+        v.layer?.borderColor = NSColor.systemOrange.cgColor
+        v.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.22).cgColor
+        w.contentView = v
+        return w
+    }
 }
 
 /// Always-on-top probe on the **main** display so you can watch counts while touching the 13K.

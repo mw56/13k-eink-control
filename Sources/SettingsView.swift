@@ -5,6 +5,7 @@ struct SettingsView: View {
     @ObservedObject var device = DeviceController.shared
     @ObservedObject var shortcuts = ShortcutCenter.shared
     @ObservedObject var touch = TouchBridge.shared
+    @ObservedObject var gestureMap = TouchBindings.shared
     @State private var gpuDitherOff = Stillcolor.isEnabled
     @State private var textEnhancement = TextEnhancement.isOn
     @State private var loginEnabled = LoginItem.isEnabled
@@ -113,8 +114,8 @@ struct SettingsView: View {
         Form {
             Section {
                 Text(L10n.t(
-                    "Rebuilt listener: HID Monitor (does not steal the USB pipe) + tablet/mouse tap. A probe window on the main screen shows live counters — those numbers must jump when you touch the 13K.",
-                    "觸控已重寫：用 HID Monitor（不搶 USB）加上系統手寫板／滑鼠監聽。主螢幕會跳出探針視窗，摸 13K 時數字必須往上跳。"
+                    "iPad-style touch on the 13K. The real mouse on other displays is unchanged. Clicks need Accessibility.",
+                    "13K 上用接近 iPad 的觸控：輕點、滑動捲動、長按拖曳、雙指捲動與捏合。其他螢幕的滑鼠不受影響。點擊需要輔助使用。"
                 ))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -204,15 +205,26 @@ struct SettingsView: View {
                     Text(touch.lastMapped).font(.caption.monospaced())
                 }
             }
-            Section(L10n.t("Gestures", "手勢")) {
-                Toggle(L10n.t("Two-finger scroll", "雙指捲動"), isOn: Binding(
-                    get: { touch.twoFingerScroll },
-                    set: { touch.setTwoFingerScroll($0) }
+            Section(L10n.t("Gesture actions", "手勢動作")) {
+                Text(L10n.t(
+                    "Each gesture can be bound to an action. “None” means the gesture is recognized but does nothing. Trackpad equivalents: four-finger up → Mission Control, four-finger down → App Exposé, five-finger pinch → Launchpad.",
+                    "每個手勢可指定一個動作。「無」表示辨識到也不會做任何事。觸控板對照：四指向上＝指揮中心，四指向下＝App Exposé，五指收合＝應用程式選單。"
                 ))
-                Toggle(L10n.t("Long-press for right-click", "長按當右鍵"), isOn: Binding(
-                    get: { touch.longPressRightClick },
-                    set: { touch.setLongPressRight($0) }
-                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                ForEach(TouchGestureKind.allCases) { kind in
+                    Picker(kind.title, selection: Binding(
+                        get: { gestureMap.action(for: kind) },
+                        set: { gestureMap.set(kind, $0) }
+                    )) {
+                        ForEach(TouchAction.allCases) { action in
+                            Text(action.title).tag(action)
+                        }
+                    }
+                }
+                Button(L10n.t("Reset to iPad defaults", "恢復 iPad 預設")) {
+                    gestureMap.resetToiPadDefaults()
+                }
             }
         }
         .formStyle(.grouped)
