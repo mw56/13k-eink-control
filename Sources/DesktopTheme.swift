@@ -19,10 +19,15 @@ enum DesktopTheme: String, CaseIterable, Identifiable {
 
     static func apply(_ theme: DesktopTheme) {
         UserDefaults.standard.set(theme.rawValue, forKey: "desktopTheme")
+        // `.default` only records the preference; do not rewrite system wallpaper.
         guard theme != .default else { return }
         guard let url = Bundle.main.url(forResource: theme.rawValue, withExtension: "png") else { return }
-        let screens = NSScreen.screens.filter { $0.localizedName.localizedCaseInsensitiveContains("13K") }
-        let targets = screens.isEmpty ? NSScreen.screens : screens
+        let screens = NSScreen.screens.filter {
+            $0.localizedName.localizedCaseInsensitiveContains("13K")
+                || $0.localizedName.localizedCaseInsensitiveContains("Paperlike")
+        }
+        let targets = screens.isEmpty ? NSScreen.screens.filter { $0 != NSScreen.main } : screens
+        guard !targets.isEmpty else { return }
         for screen in targets {
             try? NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [
                 .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue,

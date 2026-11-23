@@ -94,6 +94,15 @@ final class TouchBindings: ObservableObject {
         .fourFingerSwipeDown: .none,
     ]
 
+    /// Same as iPad for pointer gestures, plus Mac trackpad system actions.
+    static let macTrackpadDefaults: [TouchGestureKind: TouchAction] = {
+        var map = iPadDefaults
+        map[.fourFingerSwipeUp] = .missionControl
+        map[.fourFingerSwipeDown] = .appExpose
+        map[.fiveFingerPinch] = .launchpad
+        return map
+    }()
+
     @Published private(set) var map: [TouchGestureKind: TouchAction]
 
     private init() {
@@ -118,8 +127,16 @@ final class TouchBindings: ObservableObject {
     }
 
     func resetToiPadDefaults() {
+        apply(Self.iPadDefaults)
+    }
+
+    func applyMacTrackpadDefaults() {
+        apply(Self.macTrackpadDefaults)
+    }
+
+    private func apply(_ defaults: [TouchGestureKind: TouchAction]) {
         for kind in TouchGestureKind.allCases {
-            let action = Self.iPadDefaults[kind] ?? .none
+            let action = defaults[kind] ?? .none
             map[kind] = action
             UserDefaults.standard.set(action.rawValue, forKey: Self.key(kind))
         }

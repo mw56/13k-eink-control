@@ -5,14 +5,10 @@ import CoreGraphics
 import Foundation
 import IOKit.hid
 
-/// Rebuilt 13K touch path. The previous seize + SimpleClient approach never
-/// saw digitizer packets (DriverKit keeps the USB pipe; SimpleClient is silent).
-/// This engine:
-/// 1. Does **not** seize the digitizer (so WindowServer still sees it)
-/// 2. Listens with a HID **Monitor** client (the only client type that delivered events here)
-/// 3. Listens for tablet/mouse CGEvents
-/// 4. Shows a live probe panel on the main display so a touch either increments
-///    a counter or we know the OS swallowed it
+/// 13K touch path:
+/// 1. Does **not** seize the digitizer (WindowServer keeps the USB pipe)
+/// 2. Polls HID tip/X/Y elements for multi-touch (primary sample source)
+/// 3. CGEvent tap swallows the OS copy of clicks that land on the wrong display
 final class TouchEngine: ObservableObject {
     static let shared = TouchEngine()
 
@@ -25,15 +21,11 @@ final class TouchEngine: ObservableObject {
     @Published var invertX: Bool
     @Published var invertY: Bool
     @Published var swapXY: Bool
-    @Published var twoFingerScroll: Bool
-    @Published var longPressRightClick: Bool
-    @Published var nativeBind: Bool
     @Published var screenChoice: String
     @Published var lastHID = "—"
     @Published var lastMapped = "—"
     @Published var statusLine = ""
     @Published var hidReports = 0
-    @Published var probeText = ""
     @Published var bindings = TouchBindings.shared
 
     var injecting: Bool { enabled && digitizerPresent }
@@ -41,7 +33,6 @@ final class TouchEngine: ObservableObject {
 
     private let sources = TouchSources()
     private let overlay = TouchCursor()
-    private let probe = TouchProbePanel()
     private var eventSource: CGEventSource?
     private var mouseDown = false
     private var lastPoint = CGPoint.zero
@@ -54,6 +45,8 @@ final class TouchEngine: ObservableObject {
     private var lastClickPoint = CGPoint.zero
     private var liftWork: DispatchWorkItem?
     private var dragActive = false
+    private var lastUIPublish: TimeInterval = 0
+    private var pendingReports = 0
     private lazy var gestures: TouchGestures = {
         let g = TouchGestures()
         g.onOverlay = { [weak self] pts in
@@ -74,13 +67,11 @@ final class TouchEngine: ObservableObject {
     private init() {
         let d = UserDefaults.standard
         enabled = d.object(forKey: "touchEnabled") as? Bool ?? true
-        overlayEnabled = d.object(forKey: "touchOverlay") as? Bool ?? true
+        // Overlay dots flash on e-ink; off by default after first install.
+        overlayEnabled = d.object(forKey: "touchOverlay") as? Bool ?? false
         invertX = d.bool(forKey: "touchInvertX")
         invertY = d.bool(forKey: "touchInvertY")
         swapXY = d.bool(forKey: "touchSwapXY")
-        twoFingerScroll = d.object(forKey: "touchTwoFingerScroll") as? Bool ?? true
-        longPressRightClick = d.object(forKey: "touchLongPressRight") as? Bool ?? true
-        nativeBind = d.object(forKey: "touchNativeBind") as? Bool ?? true
         screenChoice = d.string(forKey: "touchScreen") ?? "auto"
         eventSource = CGEventSource(stateID: .hidSystemState)
         recacheScreen()
@@ -93,9 +84,15 @@ final class TouchEngine: ObservableObject {
 
     func start() {
         sources.onLog = { [weak self] line in
+            #if DEBUG
             DispatchQueue.main.async { self?.note(line) }
+            #else
+            _ = self
+            _ = line
+            #endif
         }
         sources.onSample = { [weak self] sample in
+            // Gestures + long-press timers share the main queue.
             DispatchQueue.main.async { self?.handle(sample) }
         }
         sources.remapPoint = { loc in
@@ -116,7 +113,6 @@ final class TouchEngine: ObservableObject {
     func stop() {
         sources.stop()
         overlay.hide()
-        probe.hide()
         gestures.reset()
         dragActive = false
         mouseDown = false
@@ -125,7 +121,7 @@ final class TouchEngine: ObservableObject {
     func setEnabled(_ on: Bool) {
         enabled = on
         UserDefaults.standard.set(on, forKey: "touchEnabled")
-        if !on { probe.hide(); overlay.hide() }
+        if !on { overlay.hide() }
         refreshStatus()
     }
 
@@ -138,9 +134,6 @@ final class TouchEngine: ObservableObject {
     func setInvertX(_ on: Bool) { invertX = on; UserDefaults.standard.set(on, forKey: "touchInvertX") }
     func setInvertY(_ on: Bool) { invertY = on; UserDefaults.standard.set(on, forKey: "touchInvertY") }
     func setSwapXY(_ on: Bool) { swapXY = on; UserDefaults.standard.set(on, forKey: "touchSwapXY") }
-    func setTwoFingerScroll(_ on: Bool) { twoFingerScroll = on; UserDefaults.standard.set(on, forKey: "touchTwoFingerScroll") }
-    func setLongPressRight(_ on: Bool) { longPressRightClick = on; UserDefaults.standard.set(on, forKey: "touchLongPressRight") }
-    func setNativeBind(_ on: Bool) { nativeBind = on; UserDefaults.standard.set(on, forKey: "touchNativeBind") }
     func setScreenChoice(_ name: String) {
         screenChoice = name
         UserDefaults.standard.set(name, forKey: "touchScreen")
@@ -208,9 +201,11 @@ final class TouchEngine: ObservableObject {
     // MARK: - samples → 13K
 
     private func handle(_ sample: TouchSample) {
-        hidReports += 1
-        lastHID = sample.summary
-        guard enabled, !bounds.isEmpty else { return }
+        pendingReports += 1
+        guard enabled, !bounds.isEmpty else {
+            flushDiagnostics(sample.summary, mapped: nil, force: sample.fingers.isEmpty)
+            return
+        }
         let points = sample.fingers.map { finger -> CGPoint in
             var nx = finger.nx
             var ny = finger.ny
@@ -223,9 +218,21 @@ final class TouchEngine: ObservableObject {
         }
         if let p = points.first {
             lastPoint = p
-            lastMapped = String(format: "%.0f, %.0f ×%d", p.x, p.y, points.count)
         }
+        let mapped = points.first.map { String(format: "%.0f, %.0f ×%d", $0.x, $0.y, points.count) }
+        flushDiagnostics(sample.summary, mapped: mapped, force: sample.fingers.isEmpty)
         gestures.ingest(fingers: points, now: ProcessInfo.processInfo.systemUptime)
+    }
+
+    /// Throttle @Published diagnostics so MenuBarExtra is not redrawing at poll rate.
+    private func flushDiagnostics(_ summary: String, mapped: String?, force: Bool) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || now - lastUIPublish >= 0.12 else { return }
+        lastUIPublish = now
+        hidReports += pendingReports
+        pendingReports = 0
+        lastHID = summary
+        if let mapped { lastMapped = mapped }
     }
 
     private func apply(_ kind: TouchGestureKind, _ phase: GesturePhase, _ p: GesturePayload) {
@@ -299,8 +306,8 @@ final class TouchEngine: ObservableObject {
         let button: CGMouseButton = (type == .rightMouseDown || type == .rightMouseUp) ? .right : .left
         guard let ev = CGEvent(mouseEventSource: eventSource, mouseType: type, mouseCursorPosition: point, mouseButton: button) else { return }
         ev.setIntegerValueField(.mouseEventClickState, value: clickCount)
+        // HID tap alone is enough; dual-post duplicated clicks in some apps.
         ev.post(tap: .cghidEventTap)
-        ev.post(tap: .cgSessionEventTap)
     }
 
     private func postScroll(dx: CGFloat, dy: CGFloat) {
@@ -320,7 +327,6 @@ final class TouchEngine: ObservableObject {
         ev.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: Double(dy))
         ev.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: Double(dx))
         ev.post(tap: .cghidEventTap)
-        ev.post(tap: .cgSessionEventTap)
     }
 
     private func postZoom(_ delta: CGFloat) {
@@ -337,7 +343,6 @@ final class TouchEngine: ObservableObject {
         ev.flags = .maskCommand
         ev.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         ev.post(tap: .cghidEventTap)
-        ev.post(tap: .cgSessionEventTap)
     }
 
     private func recacheScreen() {
@@ -367,12 +372,12 @@ final class TouchEngine: ObservableObject {
         refreshStatus()
     }
 
+    #if DEBUG
     private func note(_ line: String) {
         lastHID = line
-        probeText = sources.probeSummary
-        probe.update(sources.probeSummary)
         try? line.write(toFile: "/tmp/13k-touch.log", atomically: true, encoding: .utf8)
     }
+    #endif
 
     private func refreshStatus() {
         let line: String
@@ -387,7 +392,7 @@ final class TouchEngine: ObservableObject {
         } else {
             line = L10n.t("Touch → \(screenName)", "觸控 → \(screenName)")
         }
-        if Thread.isMainThread { statusLine = line; probe.update(sources.probeSummary) }
+        if Thread.isMainThread { statusLine = line }
         else { DispatchQueue.main.async { self.statusLine = line } }
     }
 }
@@ -447,44 +452,3 @@ private final class TouchCursor {
     }
 }
 
-/// Always-on-top probe on the **main** display so you can watch counts while touching the 13K.
-private final class TouchProbePanel {
-    private var panel: NSPanel?
-    private var label: NSTextField?
-
-    func show() {
-        DispatchQueue.main.async {
-            if self.panel == nil {
-                let p = NSPanel(
-                    contentRect: NSRect(x: 40, y: 80, width: 420, height: 220),
-                    styleMask: [.titled, .closable, .nonactivatingPanel],
-                    backing: .buffered,
-                    defer: false
-                )
-                p.title = "13K Touch probe"
-                p.isFloatingPanel = true
-                p.level = .floating
-                p.hidesOnDeactivate = false
-                p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-                let tf = NSTextField(frame: NSRect(x: 12, y: 12, width: 396, height: 176))
-                tf.isEditable = false
-                tf.isBordered = false
-                tf.drawsBackground = false
-                tf.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-                tf.stringValue = "waiting…"
-                p.contentView?.addSubview(tf)
-                self.label = tf
-                self.panel = p
-            }
-            self.panel?.orderFrontRegardless()
-        }
-    }
-
-    func update(_ text: String) {
-        DispatchQueue.main.async { self.label?.stringValue = text }
-    }
-
-    func hide() {
-        DispatchQueue.main.async { self.panel?.orderOut(nil) }
-    }
-}

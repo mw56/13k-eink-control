@@ -209,7 +209,7 @@ struct MenuBarView: View {
                     Stepper("\(device.autoClearSeconds)", value: Binding(
                         get: { device.autoClearSeconds },
                         set: { device.setAutoClear(enabled: true, seconds: $0) }
-                    ), in: 30...600, step: 10)
+                    ), in: 30...600, step: 30)
                     .frame(width: 120)
                 }
             }

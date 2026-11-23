@@ -1,16 +1,22 @@
 import SwiftUI
 import AppKit
+import Combine
+
+/// Local settings chrome. Avoids `@State` so `swiftc` on CLT (no SwiftUIMacros) can still build.
+final class SettingsChrome: ObservableObject {
+    @Published var gpuDitherOff = Stillcolor.isEnabled
+    @Published var textEnhancement = TextEnhancement.isOn
+    @Published var loginEnabled = LoginItem.isEnabled
+    @Published var theme = DesktopTheme.current
+    @Published var recording: String?
+}
 
 struct SettingsView: View {
     @ObservedObject var device = DeviceController.shared
     @ObservedObject var shortcuts = ShortcutCenter.shared
     @ObservedObject var touch = TouchBridge.shared
     @ObservedObject var gestureMap = TouchBindings.shared
-    @State private var gpuDitherOff = Stillcolor.isEnabled
-    @State private var textEnhancement = TextEnhancement.isOn
-    @State private var loginEnabled = LoginItem.isEnabled
-    @State private var theme = DesktopTheme.current
-    @State private var recording: String?
+    @ObservedObject private var chrome = SettingsChrome()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,7 +39,7 @@ struct SettingsView: View {
             .padding(12)
         }
         .frame(minWidth: 460, minHeight: 500)
-        .background(KeyCatcher(recording: $recording, onCapture: capture))
+        .background(KeyCatcher(recording: $chrome.recording, onCapture: capture))
     }
 
     private var generalTab: some View {
@@ -45,18 +51,18 @@ struct SettingsView: View {
             }
             Section(L10n.t("Startup", "啟動")) {
                 Toggle(L10n.t("Open at login", "開機自動啟動"), isOn: Binding(
-                    get: { loginEnabled },
+                    get: { chrome.loginEnabled },
                     set: {
-                        loginEnabled = $0
+                        chrome.loginEnabled = $0
                         LoginItem.setEnabled($0)
                     }
                 ))
             }
             Section(L10n.t("Theme settings", "主題")) {
                 Picker(L10n.t("13K desktop", "13K 桌布"), selection: Binding(
-                    get: { theme },
+                    get: { chrome.theme },
                     set: {
-                        theme = $0
+                        chrome.theme = $0
                         DesktopTheme.apply($0)
                     }
                 )) {
@@ -67,18 +73,18 @@ struct SettingsView: View {
             }
             Section(L10n.t("Text Enhancement", "文字增強")) {
                 Toggle(L10n.t("Sharper UI fonts (disable smoothing)", "關閉字體平滑，文字更銳利"), isOn: Binding(
-                    get: { textEnhancement },
+                    get: { chrome.textEnhancement },
                     set: {
-                        textEnhancement = $0
+                        chrome.textEnhancement = $0
                         TextEnhancement.isOn = $0
                     }
                 ))
             }
             Section(L10n.t("GPU dithering", "GPU 抖動")) {
                 Toggle(L10n.t("Disable GPU dithering (Stillcolor)", "關閉 GPU 抖動（Stillcolor）"), isOn: Binding(
-                    get: { gpuDitherOff },
+                    get: { chrome.gpuDitherOff },
                     set: {
-                        gpuDitherOff = $0
+                        chrome.gpuDitherOff = $0
                         Stillcolor.isEnabled = $0
                         Stillcolor.apply()
                     }
@@ -160,18 +166,6 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            Section(L10n.t("Native bind", "系統綁定")) {
-                Toggle(L10n.t("Tell macOS this digitizer belongs to the 13K", "告訴 macOS：這塊觸控板屬於 13K"), isOn: Binding(
-                    get: { touch.nativeBind },
-                    set: { touch.setNativeBind($0) }
-                ))
-                Text(L10n.t(
-                    "Best-effort: write the 13K DisplayID onto AppleUserHIDEventDriver (the association Windows exposes and the vendor Mac client never sets). Mouse emulation above is the reliable path.",
-                    "盡力而為：把 13K 的 DisplayID 寫進系統 HID 驅動（Windows 有這個對應，官方 Mac 客戶端沒做）。真正穩的是上面的滑鼠模擬。"
-                ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
             Section(L10n.t("Target display", "目標螢幕")) {
                 Picker(L10n.t("Map onto", "對應到"), selection: Binding(
                     get: { touch.screenChoice },
@@ -225,6 +219,9 @@ struct SettingsView: View {
                 Button(L10n.t("Reset to iPad defaults", "恢復 iPad 預設")) {
                     gestureMap.resetToiPadDefaults()
                 }
+                Button(L10n.t("Use Mac trackpad defaults", "套用 Mac 觸控板預設")) {
+                    gestureMap.applyMacTrackpadDefaults()
+                }
             }
         }
         .formStyle(.grouped)
@@ -276,8 +273,8 @@ struct SettingsView: View {
         HStack {
             Text(title)
             Spacer()
-            Button(recording == id ? L10n.t("Type shortcut…", "請按快捷鍵…") : (binding?.display ?? L10n.t("Click to record", "點擊錄製"))) {
-                recording = id
+            Button(chrome.recording == id ? L10n.t("Type shortcut…", "請按快捷鍵…") : (binding?.display ?? L10n.t("Click to record", "點擊錄製"))) {
+                chrome.recording = id
             }
             .buttonStyle(.bordered)
             if binding != nil {
@@ -292,11 +289,11 @@ struct SettingsView: View {
     }
 
     private func capture(_ event: NSEvent) {
-        guard let recording else { return }
+        guard let recording = chrome.recording else { return }
         let mods = event.modifierFlags.intersection([.command, .shift, .control, .option])
         guard !mods.isEmpty else { return }
         assign(recording, HotkeyBinding(keyCode: event.keyCode, modifiers: mods))
-        self.recording = nil
+        chrome.recording = nil
     }
 
     private func assign(_ id: String, _ binding: HotkeyBinding?) {

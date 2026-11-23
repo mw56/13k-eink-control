@@ -14,7 +14,7 @@ final class DeviceController: ObservableObject {
     @Published var brightness: Int = 32
     @Published var temperature: Int = 3
     @Published var autoClearEnabled = true
-    @Published var autoClearSeconds = 30
+    @Published var autoClearSeconds = 60
 
     private var port: SerialPort?
     private let queue = DispatchQueue(label: "local.paperlike.serial")
@@ -23,11 +23,16 @@ final class DeviceController: ObservableObject {
     private var reconnect: DispatchSourceTimer?
     private let lock = NSLock()
     private var stopping = false
+    /// Coalesce slider spam: UI updates immediately, serial flush after a short quiet period.
+    private var sliderDebounce: [UInt8: DispatchWorkItem] = [:]
 
     private init() {
         autoClearEnabled = UserDefaults.standard.object(forKey: "autoClearEnabled") as? Bool ?? true
-        let stored = UserDefaults.standard.integer(forKey: "autoClearSeconds")
-        autoClearSeconds = stored >= 30 ? stored : 30
+        if let stored = UserDefaults.standard.object(forKey: "autoClearSeconds") as? Int, stored >= 30 {
+            autoClearSeconds = stored
+        } else {
+            autoClearSeconds = 60
+        }
         queue.async { [weak self] in self?.connectAndInit() }
         startKeepAlive()
         startReconnectWatch()
@@ -42,7 +47,7 @@ final class DeviceController: ObservableObject {
     func setContrast(_ value: Int) {
         let v = min(ContrastLevel.max, max(ContrastLevel.min, value))
         contrast = v
-        send(cmd: PaperlikeCmd.contrast.rawValue, opt: UInt8(v))
+        sendDebounced(cmd: PaperlikeCmd.contrast.rawValue, opt: UInt8(v))
     }
 
     func setFrontLight(_ value: FrontLightMode) {
@@ -53,13 +58,13 @@ final class DeviceController: ObservableObject {
     func setBrightness(_ value: Int) {
         let v = min(64, max(0, value))
         brightness = v
-        send(cmd: PaperlikeCmd.brightness.rawValue, opt: UInt8(v))
+        sendDebounced(cmd: PaperlikeCmd.brightness.rawValue, opt: UInt8(v))
     }
 
     func setTemperature(_ value: Int) {
         let v = min(100, max(0, value))
         temperature = v
-        send(cmd: PaperlikeCmd.temperature.rawValue, opt: UInt8(v))
+        sendDebounced(cmd: PaperlikeCmd.temperature.rawValue, opt: UInt8(v))
     }
 
     func refresh() {
@@ -99,6 +104,8 @@ final class DeviceController: ObservableObject {
     /// Non-blocking stop so Quit is not stuck on serial I/O.
     func beginStop() {
         stopping = true
+        sliderDebounce.values.forEach { $0.cancel() }
+        sliderDebounce.removeAll()
         keepAlive?.cancel()
         autoClear?.cancel()
         reconnect?.cancel()
@@ -144,6 +151,16 @@ final class DeviceController: ObservableObject {
         queue.async { [weak self] in
             _ = self?.sendLocked(cmd: cmd, opt: opt, waitMs: 120)
         }
+    }
+
+    private func sendDebounced(cmd: UInt8, opt: UInt8, delayMs: Int = 120) {
+        sliderDebounce[cmd]?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.sliderDebounce[cmd] = nil
+            self?.send(cmd: cmd, opt: opt)
+        }
+        sliderDebounce[cmd] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(delayMs), execute: work)
     }
 
     @discardableResult

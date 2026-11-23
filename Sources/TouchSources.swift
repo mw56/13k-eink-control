@@ -121,6 +121,8 @@ final class TouchSources {
     }
 
     private func pollHID() {
+        // Element poll is the sole multi-touch sample source once the digitizer is bound.
+        guard pollDevice != nil, !tipEls.isEmpty else { return }
         let n = min(tipEls.count, min(xEls.count, yEls.count))
         var fingers: [TouchFinger] = []
         fingers.reserveCapacity(n)
@@ -249,6 +251,8 @@ final class TouchSources {
     }
 
     private func emitHIDSample(_ event: UnsafeMutableRawPointer, type: UInt32, tag: String) {
+        // Prefer element polling for samples. Monitor events are diagnostics / fallback only.
+        if pollDevice != nil, !tipEls.isEmpty { return }
         var x = API.getFloat?(event, (type << 16)) ?? 0
         var y = API.getFloat?(event, (type << 16) &+ 1) ?? 0
         if x == 0, y == 0 {
@@ -286,6 +290,9 @@ final class TouchSources {
 
     private func tick() {
         if ctpSender == 0, let matcher { ctpSender = readSender(matcher) }
+        let devices = manager.flatMap { IOHIDManagerCopyDevices($0) as? Set<IOHIDDevice> }
+        onPresence?(devices?.isEmpty == false)
+        #if DEBUG
         let kinds = lastKinds.suffix(4).joined(separator: "\n")
         pollUSBReports()
         probeSummary = """
@@ -296,6 +303,7 @@ final class TouchSources {
         \(kinds)
         """
         onLog?(String(format: "usb=%d tap=%d remap=%d", usbReports, tapEvents, remapped))
+        #endif
         TouchEngine.shared.refreshTrust()
     }
 

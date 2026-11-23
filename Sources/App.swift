@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Stillcolor.apply()
         TextEnhancement.apply()
+        DesktopTheme.apply(DesktopTheme.current)
         _ = ShortcutCenter.shared
         ControlSocket.shared.start()
         TouchBridge.shared.start()
